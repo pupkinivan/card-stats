@@ -1,343 +1,120 @@
-from math import comb
-from typing import Sequence, Mapping, Union
+from functools import partial
 
-# import matplotlib.pyplot as plt
-import numpy as np
+import streamlit as st
 
+from statistics import initial_statistics, get_updated_statistics
 from models import Colors
 from util import reduce_sum
 
 
-def hypergeometric(k: int, n: int, K: int, N: int) -> float:
-    """Calculate the probability of getting `k` number of successes in `n`
-    number of experiments, with `K` number of items that are considered a
-    success in a population of `N`.
-
-    Arguments
-        k (int): the number of times a successful element appears in the experiments
-        n (int): the total number of experiments
-        K (int): the number of elements that would be considered a success
-        N (int): the total number of elements, both successful and unsuccessful
-
-    Returns
-        proabability (float): the probability of the input scenario
-    """
-    return comb(K, k) * comb(N - K, n - k) / comb(N, n)
-
-
-def measure_land_probability_after_draw(
-    lands_drawed: int, deck_size: int, total_lands: int, total_past_draws: int
-) -> float:
-    N = deck_size - total_past_draws
-    K = total_lands - lands_drawed
-    theta = K / N
-    return theta
-
-
-def high_cost_card_probability(total_high_cost_cards: int, deck_size: int) -> float:
-    return total_high_cost_cards / deck_size
-
-
-def initial_statistics(deck_size: int, hand_size: int, lands: Mapping[Colors, int]):
-    total_lands = reduce_sum(lands)
-    results = [
-        "The probability of drawing 2 {} lands in a {:d}-card hand out of a deck of size {:d} is {:0.4f}".format(
-            color.value,
-            hand_size,
-            deck_size,
-            hypergeometric(2, hand_size, color_amounts, deck_size),
-        )
-        for color, color_amounts in lands.items()
-    ]
-    results.append(
-        "The probability of drawing 3 lands (any color) in a {:d}-card hand out of a deck of size {:d} is {:0.4f}".format(
-            hand_size,
-            deck_size,
-            hypergeometric(3, hand_size, total_lands, deck_size),
-        )
+def get_initial_stats():
+    initial_stats = initial_statistics(
+        st.session_state.deck_size,
+        st.session_state.hand_size,
+        {Colors.of(c): a for c, a in zip(color_names, color_amounts)},
     )
-    [print(result) for result in results]
-    return results
+    text = "\n".join(initial_stats)
+    st.session_state.stats = text
 
 
-def get_updated_statistics(
-    lands_drawn: Mapping[Colors, int],
-    deck_size: int,
-    draws: int,
-    lands: Mapping[Colors, int],
-    creatures: int = 0,
-):
-    k_all = reduce_sum({c: a for c, a in lands_drawn.items() if c != Colors.NONLAND})
-    K_all = reduce_sum({c: a for c, a in lands.items() if c != Colors.NONLAND})
-    results = {
-        "global": "The probability of having drawn {:d} lands in {:d} draws is {:0.4f}".format(
-            k_all,
-            draws,
-            deck_size,
-            hypergeometric(k_all, draws, K_all, deck_size),
-        )
-    }
+st.title("Card game")
 
-    remaining_lands = {
-        color: lands[color] - lands_drawn[color]
-        for color in lands.keys()
-        if color != Colors.NONLAND
-    }
-    remaining_deck = deck_size - draws
-
-    for color in lands:
-        results[color.value] = {
-            "observed": "The probability of {} {} in {} draws with {}/{} total {} lands is {:0.4f}".format(
-                lands_drawn[color],
-                color.value,
-                draws,
-                lands[color],
-                deck_size,
-                color,
-                hypergeometric(lands_drawn[color], draws, lands[color], deck_size),
-            ),
-            "next": "The probability of drawing a {} next is {:0.4f}".format(
-                color.value,
-                measure_land_probability_after_draw(
-                    lands_drawn[color], deck_size, lands[color], draws
-                ),
-            ),
-        }
-    return results
-
-
-def play_initialized(
-    lands_drawn: Mapping[Colors, int],
-    deck_size: int,
-    hand_size: int,
-    lands: Mapping[Colors, int],
-    creatures: int = 0,
-):
-    k_both = reduce_sum(lands_drawn)
-    K_both = reduce_sum(lands)
-    results = {
-        "global": "The probability of having drawn {:d} lands in a {:d}-card hand out of a deck of size {:d} is {:0.4f}".format(
-            k_both,
-            hand_size,
-            deck_size,
-            hypergeometric(k_both, hand_size, K_both, deck_size),
-        )
-    }
-
-    remaining_lands = {
-        color: original - drawn for (color, original), drawn in zip(lands, lands_drawn)
-    }
-    remaining_deck = deck_size - hand_size
-
-    for color in lands:
-        color_name = color.value
-        results[color.value] = {
-            "observed": "The probability of {} {} lands in {} draws with {}/{} total {} lands is {:0.4f}".format(
-                lands_drawn[color_name],
-                color_name,
-                hand_size,
-                lands[color_name],
-                deck_size,
-                color_name,
-                hypergeometric(
-                    lands_drawn[color_name], hand_size, lands[color.value], deck_size
-                ),
-            ),
-            "next": "The probability of drawing a {} land next is {:0.4f}".format(
-                color_name,
-                measure_land_probability_after_draw(
-                    lands_drawn[color_name], deck_size, lands[color_name], hand_size
-                ),
-            ),
-        }
-    for i in range(1):
-        yield results
-    # return results
-
-    # TODO complete
-    while True:
-        remaining_deck -= 1
-        hand_size += 1
-        last_card_drawed = input("-------- Card drawed: ")
-        print("Last card drawed: {}".format(last_card_drawed))
-        if (answer := input(f"Drawed a land [y/n]?: ")) == "y":
-            is_first_color_land = (
-                True
-                if (answer := input(f"Is it {first_color} or {second_color}?: "))
-                == first_color
-                else False
-            )
-            if is_first_color_land:
-                k_first_color += 1
-                remaining_first_color -= 1
-            else:
-                k_second_color += 1
-                remaining_second_color -= 1
-
-        first_color_probability = measure_land_probability_after_draw(
-            k_first_color, deck_size, K_first_color, hand_size
-        )
-        second_color_probability = measure_land_probability_after_draw(
-            k_second_color, deck_size, K_second_color, hand_size
-        )
-        print(
-            "The probability of drawing a {} land next is {:0.4f}".format(
-                first_color,
-                first_color_probability,
-            )
-        )
-        print(
-            "The probability of drawing a {} land next is {:0.4f}".format(
-                second_color,
-                second_color_probability,
-            )
-        )
-
-
-def play():
-    first_color: str = input("First color: ")
-    second_color = input("Second color: ")
-    K_first_color = (
-        int(answer)
-        if (answer := input(f"Number of {first_color} lands in the population [10]: "))
-        is not None
-        else 10
-    )
-    K_second_color = (
-        int(answer)
-        if (answer := input(f"Number of {second_color} lands in the population [10]: "))
-        is not None
-        else 10
-    )
-    k_first_color = (
-        int(answer)
-        if (answer := input(f"Number of {first_color} lands drawed [0]: ")) != ""
-        else 0
-    )
-    k_second_color = (
-        int(answer)
-        if (answer := input(f"Number of {second_color} lands drawed [0]: ")) != ""
-        else 0
-    )
-    n = int(answer) if (answer := input("Number of draws [7]: ")) != "" else 7
-    N = int(answer) if (answer := input("Size of the deck [60]: ")) != "" else 60
-    print(
-        "The probability of drawing a land having 3 lands in a {:d}-card hand out of a deck of size {:d} is {:0.4f}".format(
-            n, N, hypergeometric(3, 7, 22, deck_size)
-        )
+if "deck_size" not in st.session_state:
+    st.session_state["deck_size"] = st.number_input(
+        "Deck size",
+        min_value=40,
+        max_value=100,
+        value=60,
+        step=1,
     )
 
-    remaining_first_color = K_first_color - k_first_color
-    remaining_second_color = K_second_color - k_second_color
-    remaining_deck = N - n
-
-    print(
-        "The probability of {} {} lands in {} draws with {}/{} total {} lands is {:0.4f}".format(
-            k_first_color,
-            first_color,
-            n,
-            K_first_color,
-            N,
-            first_color,
-            hypergeometric(k_first_color, n, K_first_color, N),
-        )
+if "hand_size" not in st.session_state:
+    st.session_state["hand_size"] = st.number_input(
+        "Initial draw size", min_value=1, max_value=10, value=7
     )
 
-    print(
-        "The probability of {} {} lands in {} draws with {}/{} total {} lands is {:0.4f}".format(
-            k_second_color,
-            second_color,
-            n,
-            K_second_color,
-            N,
-            second_color,
-            hypergeometric(k_second_color, n, K_second_color, N),
-        )
+number_of_colors = st.number_input(
+    "Number of different land colors",
+    min_value=1,
+    max_value=6,
+    value=1,
+    step=1,
+)
+
+color_names = []
+color_amounts = []
+for i in range(number_of_colors):
+    color_names.append(st.text_input(f"Color name {i+1}", placeholder="Color name"))
+    color_amounts.append(
+        st.number_input(f"Amount of {color_names[i]} lands ", value=12, step=1)
     )
+deck_lands = {Colors.of(c): a for c, a in zip(color_names, color_amounts)}
+deck_lands[Colors.NONLAND] = st.session_state.deck_size - reduce_sum(deck_lands)
 
-    print(
-        "The probability of drawing a {} land next is {:0.4f}".format(
-            first_color,
-            measure_land_probability_after_draw(k_first_color, N, K_first_color, n),
-        )
+if "stats_text" not in st.session_state:
+    st.session_state.stats = ""
+st.session_state["stats_text"] = st.text_area(
+    label="Statistics",
+    value=st.session_state.stats,
+)
+initial_stats = st.button("Compute initial stats", on_click=get_initial_stats)
+
+if "drawn" not in st.session_state:
+    drawn = {Colors.of(c): 0 for c in color_names}
+    drawn[Colors.NONLAND] = 0
+    st.session_state["drawn"] = drawn
+
+
+def update_stats(color: Colors):
+    st.session_state.drawn[color] = int(st.session_state.drawn[color]) + 1
+    results = get_updated_statistics(
+        st.session_state.drawn,
+        st.session_state.deck_size,
+        draws=reduce_sum(st.session_state.drawn),
+        lands=deck_lands,
     )
-
-    print(
-        "The probability of drawing a {} land next is {:0.4f}".format(
-            second_color,
-            measure_land_probability_after_draw(k_first_color, N, K_first_color, n),
-        )
-    )
-
-    while True:
-        remaining_deck -= 1
-        n += 1
-        last_card_drawed = input("-------- Card drawed: ")
-        print("Last card drawed: {}".format(last_card_drawed))
-        if (answer := input(f"Drawed a land [y/n]?: ")) == "y":
-            is_first_color_land = (
-                True
-                if (answer := input(f"Is it {first_color} or {second_color}?: "))
-                == first_color
-                else False
-            )
-            if is_first_color_land:
-                k_first_color += 1
-                remaining_first_color -= 1
-            else:
-                k_second_color += 1
-                remaining_second_color -= 1
-
-        first_color_probability = measure_land_probability_after_draw(
-            k_first_color, N, K_first_color, n
-        )
-        second_color_probability = measure_land_probability_after_draw(
-            k_second_color, N, K_second_color, n
-        )
-        print(
-            "The probability of drawing a {} land next is {:0.4f}".format(
-                first_color,
-                first_color_probability,
-            )
-        )
-        print(
-            "The probability of drawing a {} land next is {:0.4f}".format(
-                second_color,
-                second_color_probability,
-            )
-        )
+    result = []
+    for color in st.session_state.drawn.keys():
+        for result_type in ["observed", "next"]:
+            result.append(results[color.value][result_type])
+    st.session_state.stats = "\n".join(result)
 
 
-def design_deck(deck_size: int, first_draw: int, desired_energy: int):
-    x_space = list(range(1, deck_size + 1))
-    probability_of_x = []
-    for x in x_space:
-        probability_of_x.append(
-            hypergeometric(desired_energy, first_draw, x, deck_size)
-        )
-    optimal_number_of_energies = np.argmax(probability_of_x) + 1
-    # fig = plt.figure(figsize=(18, 8))
-    # ax = plt.axes()
-    # ax.plot(x_space, probability_of_x)
-    # ax.set_title("Optimal number of energies: {}".format(optimal_number_of_energies))
-    # fig.show()
-    return x_space, probability_of_x, optimal_number_of_energies
+draw_card = {
+    Colors.of(color_name): partial(update_stats, Colors.of(color_name))
+    for color_name in color_names
+}
+draw_card[Colors.NONLAND] = partial(update_stats, Colors.NONLAND)
+
+for color_name in color_names:
+    color = Colors.of(color_name)
+    st.text(f"Drawn {st.session_state.drawn[color]} {color.value} lands")
+    st.button(f"Drawed a {color.value} land (+1)", on_click=draw_card[color])
+st.text(f"Drawn {st.session_state.drawn[Colors.NONLAND]} {Colors.NONLAND.value} lands")
+st.button("Drawed a nonland", on_click=draw_card[Colors.NONLAND])
+
+# def start_game_callback(colors, deck_size, hand_size):
+#     def start_turns():
+#         for turn in play_initialized(drawn_lands, deck_size, hand_size, colors):
+#             st.text_area("Turn outputs", value=turn)
+
+#     def stop_game():
+#         exit(0)
+
+#     drawn_lands = {
+#         st.number_input(
+#             f"Drawn {color.value} lands", min_value=0, max_value=100, value=0
+#         )
+#         for color in colors.keys()
+#     }
+#     st.button("Start turns", on_click=start_turns)
+#     st.button("Finish game", on_click=stop_game)
 
 
-if __name__ == "__main__":
-    # play()
-    deck_size = 40
-    desired_lands = 3
-    land_amount, probability_of_two_lands, optimal_lands = design_deck(
-        deck_size=deck_size, first_draw=7, desired_energy=desired_lands
-    )
-    for lands, proba in zip(land_amount, probability_of_two_lands):
-        print(
-            "{} lands, {:0.4f} probability {}".format(
-                lands,
-                proba,
-                f"<- Max probability for a {deck_size}-card deck, {desired_lands}-land draw"
-                if lands == optimal_lands
-                else "",
-            )
-        )
+# start_game = partial(
+#     start_game_callback,
+#     {Colors.of(c): a for c, a in zip(color_names, color_amounts)},
+#     deck_size,
+#     hand_size,
+# )
+# st.button("Start game", on_click=start_game)
